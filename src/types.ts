@@ -4,6 +4,8 @@ export interface Participant {
   id: string;
   name: string;
   avatarColor: string;
+  position?: string;
+  phone?: string;
 }
 
 export interface Activity {
