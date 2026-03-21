@@ -312,19 +312,9 @@ export default function App() {
     <div className="min-h-screen flex flex-col lg:flex-row bg-zinc-50">
       {/* Sidebar / Day Selector */}
       <aside className="w-full lg:w-72 bg-white border-b lg:border-b-0 lg:border-r border-zinc-200 p-5 flex flex-col h-auto lg:h-screen lg:sticky lg:top-0">
-        <div className="mb-8 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-zinc-50 flex items-center justify-center overflow-hidden border border-zinc-100 shadow-sm">
-            <img 
-              src="/input_file_0.png" 
-              alt="AgendaPlanner Logo" 
-              className="w-full h-full object-contain p-1" 
-              referrerPolicy="no-referrer" 
-            />
-          </div>
-          <div>
-            <h1 className="font-serif text-xl font-bold tracking-tight text-zinc-900 leading-none mb-1">AgendaPlanner</h1>
-            <p className="text-zinc-400 text-[8px] font-bold uppercase tracking-[0.2em] leading-none">Minimalist Planner</p>
-          </div>
+        <div className="mb-10 px-1">
+          <h1 className="font-serif text-2xl font-bold tracking-tight text-zinc-900 leading-none mb-2">AgendaPlanner</h1>
+          <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-[0.2em] leading-none">Minimalist Planner</p>
         </div>
 
         <div className="flex-1 space-y-1.5 overflow-y-auto pr-1">
