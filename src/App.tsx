@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, 
   Calendar as CalendarIcon, 
@@ -31,6 +31,7 @@ import {
   addDays, 
   parse,
   addMinutes,
+  differenceInMinutes
 } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -58,6 +59,7 @@ const INITIAL_DAYS: DayPlan[] = [
         title: 'Arrival at Tokyo Narita',
         description: 'Pick up JR Pass and Pocket WiFi at the airport.',
         startTime: '09:00',
+        endTime: '10:00',
         duration: 60,
         type: 'airport',
         location: 'Narita International Airport',
@@ -68,6 +70,7 @@ const INITIAL_DAYS: DayPlan[] = [
         id: 't1',
         title: 'Airport Express to Shinjuku',
         startTime: '10:00',
+        endTime: '11:00',
         duration: 60,
         type: 'travel',
         location: 'Narita Express',
@@ -79,6 +82,7 @@ const INITIAL_DAYS: DayPlan[] = [
         title: 'Check-in at Hotel',
         description: 'Drop off luggage and freshen up.',
         startTime: '11:00',
+        endTime: '11:45',
         duration: 45,
         type: 'hotel',
         location: 'Park Hyatt Tokyo',
@@ -90,6 +94,7 @@ const INITIAL_DAYS: DayPlan[] = [
         title: 'Lunch at Shinjuku Gyoen',
         description: 'Picnic under the cherry blossoms.',
         startTime: '12:30',
+        endTime: '14:00',
         duration: 90,
         type: 'dining',
         location: 'Shinjuku Gyoen National Garden',
@@ -101,6 +106,7 @@ const INITIAL_DAYS: DayPlan[] = [
         title: 'Shibuya Crossing & Hachiko',
         description: 'Experience the world\'s busiest pedestrian crossing.',
         startTime: '15:00',
+        endTime: '17:00',
         duration: 120,
         type: 'activity',
         location: 'Shibuya City',
@@ -121,16 +127,80 @@ function getEndTime(startTime: string, duration: number) {
   }
 }
 
+function getDuration(startTime: string, endTime: string) {
+  try {
+    const start = parse(startTime, 'HH:mm', new Date());
+    let end = parse(endTime, 'HH:mm', new Date());
+    if (end < start) {
+      end = addDays(end, 1);
+    }
+    return differenceInMinutes(end, start);
+  } catch (e) {
+    return 0;
+  }
+}
+
 export default function App() {
-  const [days, setDays] = useState<DayPlan[]>(INITIAL_DAYS);
-  const [selectedDayId, setSelectedDayId] = useState<string>(INITIAL_DAYS[0].id);
+  const [days, setDays] = useState<DayPlan[]>(() => {
+    const saved = localStorage.getItem('voyage_days');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.map((d: any) => ({ 
+          ...d, 
+          date: new Date(d.date),
+          activities: d.activities.map((a: any) => ({
+            ...a,
+            endTime: a.endTime || '10:00' // Migration for old data
+          }))
+        }));
+      } catch (e) {
+        console.error('Failed to parse saved days', e);
+        return INITIAL_DAYS;
+      }
+    }
+    return INITIAL_DAYS;
+  });
+
+  const [selectedDayId, setSelectedDayId] = useState<string>(() => {
+    const saved = localStorage.getItem('voyage_selected_day_id');
+    if (saved) return saved;
+    return days[0]?.id || INITIAL_DAYS[0].id;
+  });
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-  const [participants, setParticipants] = useState<Participant[]>(PREDEFINED_PARTICIPANTS);
+
+  const [participants, setParticipants] = useState<Participant[]>(() => {
+    const saved = localStorage.getItem('voyage_participants');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse saved participants', e);
+        return PREDEFINED_PARTICIPANTS;
+      }
+    }
+    return PREDEFINED_PARTICIPANTS;
+  });
+
   const [viewingMember, setViewingMember] = useState<Participant | null>(null);
   const [editingMember, setEditingMember] = useState<Participant | null>(null);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
+
+  // Auto-save
+  useEffect(() => {
+    localStorage.setItem('voyage_days', JSON.stringify(days));
+  }, [days]);
+
+  useEffect(() => {
+    localStorage.setItem('voyage_participants', JSON.stringify(participants));
+  }, [participants]);
+
+  useEffect(() => {
+    localStorage.setItem('voyage_selected_day_id', selectedDayId);
+  }, [selectedDayId]);
 
   const selectedDay = useMemo(() => 
     days.find(d => d.id === selectedDayId) || days[0], 
@@ -242,9 +312,19 @@ export default function App() {
     <div className="min-h-screen flex flex-col lg:flex-row bg-zinc-50">
       {/* Sidebar / Day Selector */}
       <aside className="w-full lg:w-72 bg-white border-b lg:border-b-0 lg:border-r border-zinc-200 p-5 flex flex-col h-auto lg:h-screen lg:sticky lg:top-0">
-        <div className="mb-6">
-          <h1 className="font-serif text-2xl font-semibold tracking-tight text-zinc-900 mb-0.5">Voyage</h1>
-          <p className="text-zinc-400 text-[9px] font-bold uppercase tracking-[0.2em]">Itinerary Planner</p>
+        <div className="mb-8 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-zinc-50 flex items-center justify-center overflow-hidden border border-zinc-100 shadow-sm">
+            <img 
+              src="/input_file_0.png" 
+              alt="AgendaPlanner Logo" 
+              className="w-full h-full object-contain p-1" 
+              referrerPolicy="no-referrer" 
+            />
+          </div>
+          <div>
+            <h1 className="font-serif text-xl font-bold tracking-tight text-zinc-900 leading-none mb-1">AgendaPlanner</h1>
+            <p className="text-zinc-400 text-[8px] font-bold uppercase tracking-[0.2em] leading-none">Minimalist Planner</p>
+          </div>
         </div>
 
         <div className="flex-1 space-y-1.5 overflow-y-auto pr-1">
@@ -322,7 +402,10 @@ export default function App() {
                   <button 
                     key={p.id}
                     title={p.name}
-                    onClick={() => setViewingMember(p)}
+                    onClick={() => {
+                      setEditingMember(p);
+                      setIsMemberModalOpen(true);
+                    }}
                     className={cn(
                       "w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold text-white shadow-sm ring-2 ring-white hover:scale-110 transition-transform",
                       p.avatarColor
@@ -454,23 +537,12 @@ export default function App() {
             participants={participants}
           />
         )}
-        {viewingMember && (
-          <MemberProfileModal 
-            member={viewingMember} 
-            onClose={() => setViewingMember(null)} 
-            onEdit={() => {
-              setEditingMember(viewingMember);
-              setViewingMember(null);
-              setIsMemberModalOpen(true);
-            }}
-            onDelete={() => deleteMember(viewingMember.id)}
-          />
-        )}
         {isMemberModalOpen && (
           <MemberEditModal 
             member={editingMember} 
             onClose={() => setIsMemberModalOpen(false)} 
             onSave={saveMember} 
+            onDelete={editingMember ? () => deleteMember(editingMember.id) : undefined}
           />
         )}
       </AnimatePresence>
@@ -478,86 +550,19 @@ export default function App() {
   );
 }
 
-function MemberProfileModal({ 
-  member, 
-  onClose, 
-  onEdit, 
-  onDelete 
-}: { 
-  member: Participant; 
-  onClose: () => void; 
-  onEdit: () => void; 
-  onDelete: () => void; 
-}) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
-      />
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="relative w-full max-w-xs bg-white rounded-[32px] shadow-2xl overflow-hidden"
-      >
-        <div className={cn("h-24 w-full", member.avatarColor)} />
-        <div className="px-6 pb-8 -mt-12 text-center">
-          <div className="w-24 h-24 rounded-full border-4 border-white bg-white mx-auto flex items-center justify-center text-3xl font-bold text-zinc-900 shadow-sm mb-4">
-            {member.name.charAt(0)}
-          </div>
-          <h3 className="text-xl font-bold text-zinc-900">{member.name}</h3>
-          <p className="text-zinc-500 text-xs font-medium uppercase tracking-widest mt-1">{member.position || 'Trip Member'}</p>
-          
-          <div className="mt-6 space-y-4 text-left">
-            <div className="flex items-center gap-3 text-zinc-600">
-              <div className="w-8 h-8 rounded-lg bg-zinc-50 flex items-center justify-center text-zinc-400">
-                <Clock size={14} />
-              </div>
-              <div>
-                <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest">Phone</p>
-                <p className="text-xs font-medium">{member.phone || 'Not provided'}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 flex items-center gap-2">
-            <button 
-              onClick={onEdit}
-              className="flex-1 bg-zinc-900 text-white py-2.5 rounded-xl font-bold text-xs hover:bg-zinc-800 transition-all"
-            >
-              Edit Profile
-            </button>
-            <button 
-              onClick={onDelete}
-              className="p-2.5 hover:bg-red-50 rounded-xl text-zinc-400 hover:text-red-500 transition-colors"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        </div>
-        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors">
-          <X size={16} />
-        </button>
-      </motion.div>
-    </div>
-  );
-}
-
 function MemberEditModal({ 
   member, 
   onClose, 
-  onSave 
+  onSave,
+  onDelete
 }: { 
   member: Participant | null; 
   onClose: () => void; 
   onSave: (data: Partial<Participant>) => void; 
+  onDelete?: () => void;
 }) {
   const [formData, setFormData] = useState<Partial<Participant>>(
-    member || { name: '', position: '', phone: '' }
+    member || { name: '' }
   );
 
   return (
@@ -590,40 +595,29 @@ function MemberEditModal({
               <label className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Name</label>
               <input 
                 type="text" 
+                autoFocus
                 value={formData.name}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
                 placeholder="Full Name"
                 className="w-full bg-zinc-50 border-none rounded-xl p-3 focus:ring-2 focus:ring-zinc-900 transition-all outline-none font-medium text-sm"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Position</label>
-              <input 
-                type="text" 
-                value={formData.position}
-                onChange={e => setFormData({ ...formData, position: e.target.value })}
-                placeholder="Job Title / Role"
-                className="w-full bg-zinc-50 border-none rounded-xl p-3 focus:ring-2 focus:ring-zinc-900 transition-all outline-none font-medium text-sm"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Phone</label>
-              <input 
-                type="text" 
-                value={formData.phone}
-                onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="+1 234 567 890"
-                className="w-full bg-zinc-50 border-none rounded-xl p-3 focus:ring-2 focus:ring-zinc-900 transition-all outline-none font-medium text-sm"
-              />
-            </div>
 
-            <div className="pt-4">
+            <div className="pt-4 flex gap-2">
               <button 
                 onClick={() => onSave(formData)}
-                className="w-full bg-zinc-900 text-white py-3 rounded-xl font-bold text-sm hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-200"
+                className="flex-1 bg-zinc-900 text-white py-3 rounded-xl font-bold text-sm hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-200"
               >
-                Save Member
+                Save
               </button>
+              {onDelete && (
+                <button 
+                  onClick={onDelete}
+                  className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors"
+                >
+                  <Trash2 size={18} />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -660,7 +654,6 @@ function ActivityCard({
                activity.type === 'travel' ? Navigation : Camera;
 
   const participants = allParticipants.filter(p => activity.participantIds.includes(p.id));
-  const endTime = getEndTime(activity.startTime, activity.duration);
 
   if (activity.type === 'travel') {
     return (
@@ -673,28 +666,44 @@ function ActivityCard({
         <div 
           onClick={onToggleCollapse}
           className={cn(
-            "flex items-center gap-3 bg-white rounded-2xl p-2.5 border border-zinc-100 w-fit cursor-pointer group transition-all shadow-sm hover:border-zinc-200",
+            "flex flex-col bg-white rounded-2xl p-3 border border-zinc-100 w-fit min-w-[200px] cursor-pointer group transition-all shadow-sm hover:border-zinc-200",
             isCollapsed ? "opacity-60 hover:opacity-100" : "opacity-100"
           )}
         >
-          <div className="w-7 h-7 rounded-full bg-zinc-50 flex items-center justify-center text-zinc-400">
-            <Navigation size={12} />
-          </div>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest leading-none">Travel</span>
-              <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                <button onClick={onEdit} className="text-zinc-300 hover:text-zinc-900 transition-colors"><Edit2 size={10} /></button>
-                <button onClick={onDelete} className="text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={10} /></button>
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-full bg-zinc-50 flex items-center justify-center text-zinc-400">
+              <Navigation size={12} />
+            </div>
+            <div className="flex flex-col flex-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest leading-none">Travel</span>
+                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                  <button onClick={onEdit} className="text-zinc-300 hover:text-zinc-900 transition-colors"><Edit2 size={10} /></button>
+                  <button onClick={onDelete} className="text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={10} /></button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-xs font-bold text-zinc-900">{activity.duration}m</span>
+                <span className="text-[10px] text-zinc-500 italic truncate max-w-[150px]">
+                  {activity.title}
+                </span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-900">{activity.duration}m</span>
-              <span className="text-[10px] text-zinc-500 italic truncate max-w-[150px]">
-                {activity.title}
-              </span>
-            </div>
           </div>
+
+          {!isCollapsed && participants.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-zinc-50 flex flex-col gap-1">
+              <p className="text-[7px] font-bold text-zinc-300 uppercase tracking-widest mb-1">Participants</p>
+              <div className="flex flex-wrap gap-1">
+                {participants.map(p => (
+                  <div key={p.id} className="flex items-center gap-1 bg-zinc-50 px-1.5 py-0.5 rounded-md">
+                    <div className={cn("w-1.5 h-1.5 rounded-full", p.avatarColor)} />
+                    <span className="text-[8px] font-medium text-zinc-500">{p.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </motion.div>
     );
@@ -746,7 +755,8 @@ function ActivityCard({
                 <div className="flex items-center gap-1 text-[9px] font-bold text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded-md">
                   <span>{activity.startTime}</span>
                   <ArrowRight size={8} className="text-zinc-400" />
-                  <span>{endTime}</span>
+                  <span>{activity.endTime}</span>
+                  <span className="ml-1 text-zinc-400 font-medium">({activity.duration}m)</span>
                 </div>
                 {!isCollapsed && (
                   <span className={cn("text-[8px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-md border", typeConfig.color)}>
@@ -866,6 +876,7 @@ function ActivityModal({
       title: '',
       description: '',
       startTime: '09:00',
+      endTime: '10:00',
       duration: 60,
       type: 'activity',
       location: '',
@@ -873,6 +884,13 @@ function ActivityModal({
       participantIds: []
     }
   );
+
+  useEffect(() => {
+    if (formData.startTime && formData.endTime) {
+      const duration = getDuration(formData.startTime, formData.endTime);
+      setFormData(prev => ({ ...prev, duration }));
+    }
+  }, [formData.startTime, formData.endTime]);
 
   const [newImageUrl, setNewImageUrl] = useState('');
 
@@ -967,11 +985,11 @@ function ActivityModal({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Duration (mins)</label>
+                <label className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">End Time</label>
                 <input 
-                  type="number" 
-                  value={formData.duration}
-                  onChange={e => setFormData({ ...formData, duration: parseInt(e.target.value) || 0 })}
+                  type="time" 
+                  value={formData.endTime}
+                  onChange={e => setFormData({ ...formData, endTime: e.target.value })}
                   className="w-full bg-zinc-50 border-none rounded-xl p-3.5 focus:ring-2 focus:ring-zinc-900 transition-all outline-none font-medium text-xs"
                 />
               </div>

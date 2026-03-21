@@ -12,8 +12,9 @@ export interface Activity {
   id: string;
   title: string;
   description?: string;
-  startTime: string; // ISO string or "HH:mm"
-  duration: number; // in minutes
+  startTime: string; // "HH:mm"
+  endTime: string;   // "HH:mm"
+  duration: number; // in minutes (calculated)
   imageUrls: string[];
   location?: string;
   type: 'hotel' | 'activity' | 'dining' | 'airport' | 'travel';
