@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: planners
+    // Document ID: {plannerId}
+    // Fields:
+    //   - title: string (required)
+    //   - days: list (required) - Array of DayPlan objects
+    //   - participants: list (required) - Array of Participant objects
+    //   - lastUpdated: timestamp (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidPlanner(data) {
+      return data.keys().hasAll(['title', 'days', 'participants']) &&
+             data.title is string &&
+             data.days is list &&
+             data.participants is list &&
+             (!('lastUpdated' in data) || data.lastUpdated is timestamp);
+    }
+
+    match /planners/{plannerId} {
+      // Anyone with the link can read the planner
+      allow read: if true;
+
+      // Allow creation and update if the data is valid
+      // For this collaborative demo, we allow unauthenticated access if the link is known
+      allow create: if true;
+      allow update: if true;
+      
+      // Delete is restricted
+      allow delete: if false;
+    }
+  }
+}

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
   Plus, 
   Calendar as CalendarIcon, 
@@ -23,7 +23,10 @@ import {
   ArrowRight,
   Hotel,
   PlaneTakeoff,
-  Navigation
+  Navigation,
+  Share2,
+  Check,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -35,6 +38,9 @@ import {
 } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { doc, onSnapshot, setDoc, getDoc, getDocFromServer, serverTimestamp } from 'firebase/firestore';
+import { db, auth } from './firebase';
 import { Activity, DayPlan, ACTIVITY_TYPES, Participant } from './types';
 
 function cn(...inputs: ClassValue[]) {
@@ -42,77 +48,118 @@ function cn(...inputs: ClassValue[]) {
 }
 
 const PREDEFINED_PARTICIPANTS: Participant[] = [
-  { id: 'p1', name: 'Alice', position: 'Lead Designer', phone: '+1 234 567 890', avatarColor: 'bg-rose-400' },
-  { id: 'p2', name: 'Bob', position: 'Tech Lead', phone: '+1 234 567 891', avatarColor: 'bg-indigo-400' },
-  { id: 'p3', name: 'Charlie', position: 'Product Manager', phone: '+1 234 567 892', avatarColor: 'bg-emerald-400' },
-  { id: 'p4', name: 'Diana', position: 'Marketing Lead', phone: '+1 234 567 893', avatarColor: 'bg-amber-400' },
-  { id: 'p5', name: 'Edward', position: 'Operations', phone: '+1 234 567 894', avatarColor: 'bg-zinc-400' },
+  { id: 'p-twi', name: 'TWI', avatarColor: 'bg-zinc-900' },
+  { id: 'p-ww', name: 'WW', avatarColor: 'bg-blue-400' },
+  { id: 'p-an', name: 'AN', avatarColor: 'bg-rose-400' },
+  { id: 'p-jol', name: 'JoL', avatarColor: 'bg-emerald-400' },
+  { id: 'p-px', name: 'PX', avatarColor: 'bg-amber-400' },
+  { id: 'p-cs', name: 'Chensheng', avatarColor: 'bg-indigo-400' },
+  { id: 'p-clz', name: 'CLZ', avatarColor: 'bg-cyan-400' },
+  { id: 'p-ds', name: 'DS', avatarColor: 'bg-violet-400' },
+  { id: 'p-grl', name: 'GRL', avatarColor: 'bg-orange-400' },
+  { id: 'p-ex', name: 'Exhibition Team', avatarColor: 'bg-zinc-400' },
 ];
 
 const INITIAL_DAYS: DayPlan[] = [
   {
-    id: '1',
-    date: new Date(),
+    id: 'd1',
+    date: new Date('2026-04-21'),
     activities: [
-      {
-        id: 'a1',
-        title: 'Arrival at Tokyo Narita',
-        description: 'Pick up JR Pass and Pocket WiFi at the airport.',
-        startTime: '09:00',
-        endTime: '10:00',
-        duration: 60,
-        type: 'airport',
-        location: 'Narita International Airport',
-        imageUrls: [],
-        participantIds: ['p1', 'p2']
-      },
-      {
-        id: 't1',
-        title: 'Airport Express to Shinjuku',
-        startTime: '10:00',
-        endTime: '11:00',
-        duration: 60,
-        type: 'travel',
-        location: 'Narita Express',
-        imageUrls: [],
-        participantIds: ['p1', 'p2']
-      },
-      {
-        id: 'a2',
-        title: 'Check-in at Hotel',
-        description: 'Drop off luggage and freshen up.',
-        startTime: '11:00',
-        endTime: '11:45',
-        duration: 45,
-        type: 'hotel',
-        location: 'Park Hyatt Tokyo',
-        imageUrls: [],
-        participantIds: ['p1', 'p2', 'p3', 'p4']
-      },
-      {
-        id: 'a3',
-        title: 'Lunch at Shinjuku Gyoen',
-        description: 'Picnic under the cherry blossoms.',
-        startTime: '12:30',
-        endTime: '14:00',
-        duration: 90,
-        type: 'dining',
-        location: 'Shinjuku Gyoen National Garden',
-        imageUrls: ['https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=1000&auto=format&fit=crop'],
-        participantIds: ['p1', 'p3']
-      },
-      {
-        id: 'a4',
-        title: 'Shibuya Crossing & Hachiko',
-        description: 'Experience the world\'s busiest pedestrian crossing.',
-        startTime: '15:00',
-        endTime: '17:00',
-        duration: 120,
-        type: 'activity',
-        location: 'Shibuya City',
-        imageUrls: ['https://images.unsplash.com/photo-1542051841857-5f90071e7989?q=80&w=1000&auto=format&fit=crop'],
-        participantIds: ['p2', 'p4']
-      }
+      { id: 'a1', title: 'Pick up at Airport', startTime: '16:45', endTime: '17:30', duration: 45, type: 'airport', location: 'PVG Airport T2 TK26', imageUrls: [], participantIds: ['p-twi', 'p-ww'] },
+      { id: 'a2', title: 'Transport from Airport to Hotel', startTime: '17:30', endTime: '19:00', duration: 90, type: 'travel', location: 'Shanghai', imageUrls: [], participantIds: ['p-twi', 'p-ww'] },
+      { id: 'a3', title: 'Check in Hotel', startTime: '19:00', endTime: '19:30', duration: 30, type: 'hotel', location: 'Jing An Shangri-La', imageUrls: [], participantIds: ['p-twi'] },
+      { id: 'a4', title: 'Dinner', startTime: '19:30', endTime: '21:00', duration: 90, type: 'dining', location: 'Shanghai', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+    ]
+  },
+  {
+    id: 'd2',
+    date: new Date('2026-04-22'),
+    activities: [
+      { id: 'a5', title: 'Meet at Hotel lobby', startTime: '07:20', endTime: '07:30', duration: 10, type: 'activity', location: 'Jing An Shangri-La', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a6', title: 'Shuttle bus to fairground', startTime: '07:30', endTime: '08:30', duration: 60, type: 'travel', location: 'SNIEC', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a7', title: 'Briefing Day 2', startTime: '08:50', endTime: '09:00', duration: 10, type: 'activity', location: 'SNIEC Fraisa booth', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-ex'] },
+      { id: 'a8', title: 'Meet the team at booth', startTime: '08:30', endTime: '10:00', duration: 90, type: 'activity', location: 'SNIEC swiss pavillion', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a9', title: 'Discussion with UM / Chensheng', description: 'High precision', startTime: '10:00', endTime: '11:45', duration: 105, type: 'activity', location: 'SNIEC Fraisa booth', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-px', 'p-cs'] },
+      { id: 'a10', title: 'Lunch @ Swiss lounge', startTime: '12:00', endTime: '13:30', duration: 90, type: 'dining', location: 'SNIEC swiss pavillion', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a11', title: 'Discussion with Kern or Yasda', description: 'High precision', startTime: '13:30', endTime: '14:30', duration: 60, type: 'activity', location: 'SNIEC Fraisa booth', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-px'] },
+      { id: 'a12', title: 'Competitor booth visits', description: 'Information for General Market', startTime: '14:30', endTime: '16:30', duration: 120, type: 'activity', location: 'SNIEC', imageUrls: [], participantIds: ['p-twi', 'p-jol'] },
+      { id: 'a13', title: 'Debriefing Day 2', startTime: '16:40', endTime: '16:50', duration: 10, type: 'activity', location: 'SNIEC', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-ex'] },
+      { id: 'a14', title: 'Shuttle bus to SwissEvening', startTime: '17:00', endTime: '18:00', duration: 60, type: 'travel', location: 'SNIEC meeting point', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-ex'] },
+      { id: 'a15', title: 'Swiss Evening', startTime: '19:00', endTime: '21:00', duration: 120, type: 'activity', location: 'Shanghai', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-ex'] },
+      { id: 'a16', title: 'Shuttle bus to Hotel', startTime: '21:00', endTime: '22:00', duration: 60, type: 'travel', location: 'Jing An Shangri-La', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+    ]
+  },
+  {
+    id: 'd3',
+    date: new Date('2026-04-23'),
+    activities: [
+      { id: 'a17', title: 'Meet at Hotel lobby', startTime: '07:20', endTime: '07:30', duration: 10, type: 'activity', location: 'Jing An Shangri-La', imageUrls: [], participantIds: ['p-twi', 'p-jol'] },
+      { id: 'a18', title: 'Shuttle bus to fairground', startTime: '07:30', endTime: '08:30', duration: 60, type: 'travel', location: 'SNIEC', imageUrls: [], participantIds: ['p-twi', 'p-jol'] },
+      { id: 'a19', title: 'Briefing Day 3', startTime: '08:50', endTime: '09:00', duration: 10, type: 'activity', location: 'SNIEC Fraisa booth', imageUrls: [], participantIds: ['p-twi', 'p-jol', 'p-ex'] },
+      { id: 'a20', title: 'Discussion with stakeholders', description: 'Market dynamic / raw material', startTime: '08:30', endTime: '11:00', duration: 150, type: 'activity', location: 'SNIEC', imageUrls: [], participantIds: ['p-twi', 'p-jol'] },
+      { id: 'a21', title: 'Taxi to office', startTime: '11:00', endTime: '11:45', duration: 45, type: 'travel', location: 'FRAISA China', imageUrls: [], participantIds: ['p-twi', 'p-jol'] },
+      { id: 'a22', title: 'Lunch @ office', startTime: '12:00', endTime: '13:30', duration: 90, type: 'dining', location: 'FRAISA China', imageUrls: [], participantIds: ['p-twi', 'p-jol'] },
+      { id: 'a23', title: 'Discussion China strategy', description: 'Future competence', startTime: '14:00', endTime: '16:00', duration: 120, type: 'activity', location: 'FRAISA China', imageUrls: [], participantIds: ['p-twi', 'p-jol'] },
+      { id: 'a24', title: 'Meet AN and drive to hotel', startTime: '16:30', endTime: '17:30', duration: 60, type: 'travel', location: 'Jing An Shangri-La', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a25', title: 'To restaurant', startTime: '18:30', endTime: '19:00', duration: 30, type: 'travel', location: 'Shanghai', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a26', title: 'Dinner', startTime: '19:00', endTime: '21:00', duration: 120, type: 'dining', location: 'Shanghai', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a27', title: 'Back to hotel', startTime: '21:00', endTime: '21:30', duration: 30, type: 'travel', location: 'Jing An Shangri-La', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+    ]
+  },
+  {
+    id: 'd4',
+    date: new Date('2026-04-24'),
+    activities: [
+      { id: 'a28', title: 'Drive to Schaeffler', startTime: '08:30', endTime: '09:45', duration: 75, type: 'travel', location: 'Jing An Shangri-La', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a29', title: 'Visit Schaeffler', startTime: '10:00', endTime: '12:00', duration: 120, type: 'activity', location: 'Schaeffler China', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-px', 'p-clz', 'p-jol'] },
+      { id: 'a30', title: 'Lunch in Taicang', startTime: '12:00', endTime: '13:30', duration: 90, type: 'dining', location: 'Taicang', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-px', 'p-clz', 'p-jol'] },
+      { id: 'a31', title: 'University visit', description: 'Future talent and ToolSchool project pipeline', startTime: '14:00', endTime: '16:00', duration: 120, type: 'activity', location: 'XJTLU', imageUrls: [], participantIds: ['p-twi', 'p-jol'] },
+      { id: 'a32', title: 'Drive back to Hotel', startTime: '16:00', endTime: '18:00', duration: 120, type: 'travel', location: 'Jing An Shangri-La', imageUrls: [], participantIds: ['p-twi', 'p-jol'] },
+      { id: 'a33', title: 'Dinner', startTime: '19:00', endTime: '21:00', duration: 120, type: 'dining', location: 'Shanghai', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+    ]
+  },
+  {
+    id: 'd5',
+    date: new Date('2026-04-25'),
+    activities: [
+      { id: 'a34', title: 'Drive for lunch', startTime: '12:00', endTime: '12:30', duration: 30, type: 'travel', location: 'Jing An Shangri-La', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a35', title: 'Lunch', startTime: '13:00', endTime: '14:30', duration: 90, type: 'dining', location: 'Lv Bo Lang', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a36', title: 'Tour in Shanghai', description: 'Bund and downtown', startTime: '14:30', endTime: '17:30', duration: 180, type: 'activity', location: 'Shanghai Bund', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a37', title: 'Dinner', startTime: '18:00', endTime: '21:00', duration: 180, type: 'dining', location: 'Lost Heaven', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+    ]
+  },
+  {
+    id: 'd6',
+    date: new Date('2026-04-26'),
+    activities: [
+      { id: 'a38', title: 'Drive to Airport', startTime: '07:30', endTime: '08:30', duration: 60, type: 'travel', location: 'Shanghai Hongqiao (SHA)', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a39', title: 'Flight SHA-SZX', description: 'MU5355', startTime: '10:05', endTime: '12:25', duration: 140, type: 'travel', location: 'Shenzhen', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a40', title: 'Pick up and drive to Hotel', startTime: '13:30', endTime: '14:30', duration: 60, type: 'travel', location: 'Shenzhen', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a41', title: 'Check in', startTime: '14:30', endTime: '15:00', duration: 30, type: 'hotel', location: 'JW Marriott Qianhai Huaqiaocheng', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a42', title: 'City view and Dinner', startTime: '15:00', endTime: '20:00', duration: 300, type: 'activity', location: 'Shenzhen', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+    ]
+  },
+  {
+    id: 'd8',
+    date: new Date('2026-04-28'),
+    activities: [
+      { id: 'a43', title: 'Check out and drive to customer', startTime: '09:00', endTime: '10:30', duration: 90, type: 'travel', location: 'Hongrita', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-px', 'p-ds', 'p-grl'] },
+      { id: 'a44', title: 'Visit customer Hongrita', startTime: '10:30', endTime: '12:00', duration: 90, type: 'activity', location: 'Hongrita', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-px', 'p-ds', 'p-grl'] },
+      { id: 'a45', title: 'Lunch and drive to customer', startTime: '12:00', endTime: '14:00', duration: 120, type: 'dining', location: 'MeHow', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-px', 'p-ds', 'p-grl'] },
+      { id: 'a46', title: 'Visit customer MeHow', startTime: '14:00', endTime: '16:00', duration: 120, type: 'activity', location: 'MeHow', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol', 'p-px', 'p-ds', 'p-grl'] },
+      { id: 'a47', title: 'Drive to customs', startTime: '16:00', endTime: '18:30', duration: 150, type: 'travel', location: 'Hong Kong', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a48', title: 'Check in Hotel', startTime: '18:30', endTime: '19:00', duration: 30, type: 'hotel', location: 'Hyatt Regency Tsim Sha Tsui', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a49', title: 'Dinner', startTime: '19:00', endTime: '20:30', duration: 90, type: 'dining', location: 'Osteria', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+    ]
+  },
+  {
+    id: 'd9',
+    date: new Date('2026-04-29'),
+    activities: [
+      { id: 'a50', title: 'Check out', startTime: '09:30', endTime: '10:00', duration: 30, type: 'hotel', location: 'Hyatt Regency Tsim Sha Tsui', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a51', title: 'Debriefing China tour', startTime: '10:00', endTime: '12:00', duration: 120, type: 'activity', location: 'Hong Kong', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a52', title: 'Lunch and tour in HK', startTime: '12:00', endTime: '18:00', duration: 360, type: 'activity', location: 'Hong Kong', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
+      { id: 'a53', title: 'Pick up luggage and taxi to airport', startTime: '18:00', endTime: '19:00', duration: 60, type: 'travel', location: 'HK Airport', imageUrls: [], participantIds: ['p-twi', 'p-an', 'p-jol'] },
     ]
   }
 ];
@@ -140,67 +187,180 @@ function getDuration(startTime: string, endTime: string) {
   }
 }
 
+import { Route, Routes } from 'react-router-dom';
+
 export default function App() {
-  const [days, setDays] = useState<DayPlan[]>(() => {
-    const saved = localStorage.getItem('voyage_days');
-    if (saved) {
+  return (
+    <Routes>
+      <Route path="/" element={<PlannerContent />} />
+      <Route path="/:plannerId" element={<PlannerContent />} />
+    </Routes>
+  );
+}
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  // We still want to show a user-friendly message in the UI if needed
+  // but for the AIS Agent, the JSON is critical.
+}
+
+function PlannerContent() {
+  const { plannerId } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Validate Connection to Firestore
+  useEffect(() => {
+    async function testConnection() {
       try {
-        const parsed = JSON.parse(saved);
-        return parsed.map((d: any) => ({ 
-          ...d, 
-          date: new Date(d.date),
-          activities: d.activities.map((a: any) => ({
-            ...a,
-            endTime: a.endTime || '10:00' // Migration for old data
-          }))
-        }));
-      } catch (e) {
-        console.error('Failed to parse saved days', e);
-        return INITIAL_DAYS;
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration. The client is offline.");
+        }
+        // Skip logging for other errors, as this is simply a connection test.
       }
     }
-    return INITIAL_DAYS;
-  });
+    testConnection();
+  }, []);
 
-  const [selectedDayId, setSelectedDayId] = useState<string>(() => {
-    const saved = localStorage.getItem('voyage_selected_day_id');
-    if (saved) return saved;
-    return days[0]?.id || INITIAL_DAYS[0].id;
-  });
+  const [days, setDays] = useState<DayPlan[]>(INITIAL_DAYS);
+  const [selectedDayId, setSelectedDayId] = useState<string>(INITIAL_DAYS[0].id);
+  const [participants, setParticipants] = useState<Participant[]>(PREDEFINED_PARTICIPANTS);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-
-  const [participants, setParticipants] = useState<Participant[]>(() => {
-    const saved = localStorage.getItem('voyage_participants');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed to parse saved participants', e);
-        return PREDEFINED_PARTICIPANTS;
-      }
-    }
-    return PREDEFINED_PARTICIPANTS;
-  });
-
   const [viewingMember, setViewingMember] = useState<Participant | null>(null);
   const [editingMember, setEditingMember] = useState<Participant | null>(null);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
 
-  // Auto-save
+  // Generate a new planner ID if none exists
   useEffect(() => {
-    localStorage.setItem('voyage_days', JSON.stringify(days));
-  }, [days]);
+    if (!plannerId && location.pathname === '/') {
+      const newId = Math.random().toString(36).substring(2, 15);
+      navigate(`/${newId}`, { replace: true });
+    }
+  }, [plannerId, navigate, location.pathname]);
 
+  // Sync with Firestore
   useEffect(() => {
-    localStorage.setItem('voyage_participants', JSON.stringify(participants));
-  }, [participants]);
+    if (!plannerId) return;
 
+    const docRef = doc(db, 'planners', plannerId);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.days) {
+          const loadedDays = data.days.map((d: any) => ({
+            ...d,
+            date: new Date(d.date)
+          }));
+          setDays(loadedDays);
+          if (!selectedDayId || !loadedDays.find((d: any) => d.id === selectedDayId)) {
+            setSelectedDayId(loadedDays[0].id);
+          }
+        }
+        if (data.participants) {
+          setParticipants(data.participants);
+        }
+      } else {
+        // If document doesn't exist, create it with initial data
+        setDoc(docRef, {
+          title: 'AgendaPlanner',
+          days: INITIAL_DAYS.map(d => ({ ...d, date: d.date.toISOString() })),
+          participants: PREDEFINED_PARTICIPANTS,
+          lastUpdated: serverTimestamp()
+        }).catch(error => handleFirestoreError(error, OperationType.CREATE, `planners/${plannerId}`));
+      }
+      setHasLoaded(true);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `planners/${plannerId}`);
+    });
+
+    return () => unsubscribe();
+  }, [plannerId]);
+
+  // Auto-save changes
   useEffect(() => {
-    localStorage.setItem('voyage_selected_day_id', selectedDayId);
-  }, [selectedDayId]);
+    if (!plannerId || !hasLoaded) return;
+
+    const saveTimeout = setTimeout(async () => {
+      setIsSyncing(true);
+      try {
+        const docRef = doc(db, 'planners', plannerId);
+        await setDoc(docRef, {
+          title: 'AgendaPlanner',
+          days: days.map(d => ({ ...d, date: d.date.toISOString() })),
+          participants: participants,
+          lastUpdated: serverTimestamp()
+        }, { merge: true });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `planners/${plannerId}`);
+      } finally {
+        setIsSyncing(false);
+      }
+    }, 1000); // Debounce save
+
+    return () => clearTimeout(saveTimeout);
+  }, [days, participants, plannerId, hasLoaded]);
+
+  const handleShare = () => {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    });
+  };
 
   const selectedDay = useMemo(() => 
     days.find(d => d.id === selectedDayId) || days[0], 
@@ -312,9 +472,38 @@ export default function App() {
     <div className="min-h-screen flex flex-col lg:flex-row bg-zinc-50">
       {/* Sidebar / Day Selector */}
       <aside className="w-full lg:w-72 bg-white border-b lg:border-b-0 lg:border-r border-zinc-200 p-5 flex flex-col h-auto lg:h-screen lg:sticky lg:top-0">
-        <div className="mb-10 px-1">
-          <h1 className="font-serif text-2xl font-bold tracking-tight text-zinc-900 leading-none mb-2">AgendaPlanner</h1>
-          <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-[0.2em] leading-none">Minimalist Planner</p>
+        <div className="mb-10 px-1 flex items-start justify-between">
+          <div>
+            <h1 className="font-serif text-2xl font-bold tracking-tight text-zinc-900 leading-none mb-2">AgendaPlanner</h1>
+            <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-[0.2em] leading-none">Minimalist Planner</p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <button 
+              onClick={handleShare}
+              className="p-2 rounded-lg bg-zinc-50 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-all relative group"
+              title="Share Planner"
+            >
+              {copySuccess ? <Check size={16} className="text-emerald-500" /> : <Share2 size={16} />}
+              <AnimatePresence>
+                {copySuccess && (
+                  <motion.span 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="absolute -bottom-8 right-0 text-[10px] font-bold text-emerald-600 whitespace-nowrap bg-emerald-50 px-2 py-1 rounded border border-emerald-100"
+                  >
+                    Link Copied!
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+            {isSyncing && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-zinc-50 border border-zinc-100">
+                <div className="w-1 h-1 rounded-full bg-zinc-400 animate-pulse" />
+                <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest">Syncing</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex-1 space-y-1.5 overflow-y-auto pr-1">
@@ -426,95 +615,104 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto relative">
-        <div className="max-w-4xl mx-auto p-6 lg:p-10">
-          <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
-            <div className="flex items-center gap-4">
-              <div className="relative group/date">
-                <input 
-                  type="date" 
-                  value={format(selectedDay.date, 'yyyy-MM-dd')}
-                  onChange={(e) => updateDayDate(selectedDay.id, new Date(e.target.value))}
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                />
-                <div className="bg-white p-2 rounded-xl shadow-sm border border-zinc-100 flex flex-col items-center justify-center min-w-[56px] group-hover/date:border-zinc-300 transition-all group-hover/date:shadow-md">
-                  <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest leading-none mb-1">{format(selectedDay.date, 'MMM')}</span>
-                  <span className="text-lg font-bold text-zinc-900 leading-none">{format(selectedDay.date, 'dd')}</span>
-                  <div className="absolute -right-1 -top-1 w-4 h-4 bg-zinc-900 rounded-full flex items-center justify-center text-white scale-0 group-hover/date:scale-100 transition-transform">
-                    <Edit2 size={8} />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="font-serif text-2xl font-bold text-zinc-900 mb-0.5">
-                    {format(selectedDay.date, 'MMMM do')}
-                  </h2>
-                </div>
-                <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">{format(selectedDay.date, 'EEEE')}</p>
-              </div>
-            </div>
-            <button 
-              onClick={() => {
-                setEditingActivity(null);
-                setIsModalOpen(true);
-              }}
-              className="flex items-center justify-center gap-2 bg-zinc-900 text-white px-5 py-3 rounded-full text-xs font-bold hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-200 active:scale-95"
-            >
-              <Plus size={16} />
-              <span>Add Activity</span>
-            </button>
-          </header>
-
-          {/* Timeline View */}
-          <div className="relative pl-8 lg:pl-16">
-            {/* Vertical Line */}
-            <div className="absolute left-0 lg:left-8 top-0 bottom-0 w-px bg-zinc-200" />
-
-            <div className="space-y-6">
-              {selectedDay.activities.length === 0 ? (
-                <div className="py-20 text-center">
-                  <div className="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-300">
-                    <Clock size={24} />
-                  </div>
-                  <p className="text-zinc-400 text-sm font-medium">No activities planned for this day yet.</p>
-                </div>
-              ) : (
-                selectedDay.activities
-                  .sort((a, b) => a.startTime.localeCompare(b.startTime))
-                  .map((activity, idx, arr) => (
-                    <div key={activity.id}>
-                      <ActivityCard 
-                        activity={activity} 
-                        isCollapsed={collapsedIds.has(activity.id)}
-                        onToggleCollapse={() => toggleCollapse(activity.id)}
-                        onEdit={() => {
-                          setEditingActivity(activity);
-                          setIsModalOpen(true);
-                        }}
-                        onDelete={() => deleteActivity(activity.id)}
-                        participants={participants}
-                      />
-                    </div>
-                  ))
-              )}
-
-              {selectedDay.activities.length > 0 && (
-                <div className="pt-4">
-                  <button 
-                    onClick={() => {
-                      setEditingActivity(null);
-                      setIsModalOpen(true);
-                    }}
-                    className="w-full py-4 rounded-2xl border-2 border-dashed border-zinc-100 text-zinc-300 hover:border-zinc-200 hover:text-zinc-500 transition-all flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest"
-                  >
-                    <Plus size={14} />
-                    <span>Add Entry</span>
-                  </button>
-                </div>
-              )}
+        {!hasLoaded ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-12 h-12 rounded-full border-2 border-zinc-100 border-t-zinc-900 animate-spin" />
+              <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Loading Itinerary</p>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="max-w-4xl mx-auto p-6 lg:p-10">
+            <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+              <div className="flex items-center gap-4">
+                <div className="relative group/date">
+                  <input 
+                    type="date" 
+                    value={format(selectedDay.date, 'yyyy-MM-dd')}
+                    onChange={(e) => updateDayDate(selectedDay.id, new Date(e.target.value))}
+                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                  />
+                  <div className="bg-white p-2 rounded-xl shadow-sm border border-zinc-100 flex flex-col items-center justify-center min-w-[56px] group-hover/date:border-zinc-300 transition-all group-hover/date:shadow-md">
+                    <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest leading-none mb-1">{format(selectedDay.date, 'MMM')}</span>
+                    <span className="text-lg font-bold text-zinc-900 leading-none">{format(selectedDay.date, 'dd')}</span>
+                    <div className="absolute -right-1 -top-1 w-4 h-4 bg-zinc-900 rounded-full flex items-center justify-center text-white scale-0 group-hover/date:scale-100 transition-transform">
+                      <Edit2 size={8} />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-serif text-2xl font-bold text-zinc-900 mb-0.5">
+                      {format(selectedDay.date, 'MMMM do')}
+                    </h2>
+                  </div>
+                  <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest">{format(selectedDay.date, 'EEEE')}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setEditingActivity(null);
+                  setIsModalOpen(true);
+                }}
+                className="flex items-center justify-center gap-2 bg-zinc-900 text-white px-5 py-3 rounded-full text-xs font-bold hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-200 active:scale-95"
+              >
+                <Plus size={16} />
+                <span>Add Activity</span>
+              </button>
+            </header>
+
+            {/* Timeline View */}
+            <div className="relative pl-8 lg:pl-16">
+              {/* Vertical Line */}
+              <div className="absolute left-0 lg:left-8 top-0 bottom-0 w-px bg-zinc-200" />
+
+              <div className="space-y-6">
+                {selectedDay.activities.length === 0 ? (
+                  <div className="py-20 text-center">
+                    <div className="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-300">
+                      <Clock size={24} />
+                    </div>
+                    <p className="text-zinc-400 text-sm font-medium">No activities planned for this day yet.</p>
+                  </div>
+                ) : (
+                  selectedDay.activities
+                    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                    .map((activity, idx, arr) => (
+                      <div key={activity.id}>
+                        <ActivityCard 
+                          activity={activity} 
+                          isCollapsed={collapsedIds.has(activity.id)}
+                          onToggleCollapse={() => toggleCollapse(activity.id)}
+                          onEdit={() => {
+                            setEditingActivity(activity);
+                            setIsModalOpen(true);
+                          }}
+                          onDelete={() => deleteActivity(activity.id)}
+                          participants={participants}
+                        />
+                      </div>
+                    ))
+                )}
+
+                {selectedDay.activities.length > 0 && (
+                  <div className="pt-4">
+                    <button 
+                      onClick={() => {
+                        setEditingActivity(null);
+                        setIsModalOpen(true);
+                      }}
+                      className="w-full py-4 rounded-2xl border-2 border-dashed border-zinc-100 text-zinc-300 hover:border-zinc-200 hover:text-zinc-500 transition-all flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest"
+                    >
+                      <Plus size={14} />
+                      <span>Add Entry</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Modals */}

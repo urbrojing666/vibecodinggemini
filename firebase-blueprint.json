@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "Planner": {
+      "title": "Planner",
+      "description": "A collection of days and events for a specific itinerary.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The name of the planner." },
+        "days": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "date": { "type": "string" },
+              "activities": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "description": { "type": "string" },
+                    "time": { "type": "string" },
+                    "duration": { "type": "string" },
+                    "location": { "type": "string" },
+                    "participantIds": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "color": { "type": "string" }
+            }
+          }
+        },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "days", "participants"]
+    }
+  },
+  "firestore": {
+    "/planners/{plannerId}": {
+      "schema": "Planner",
+      "description": "Individual planners accessible by a unique ID."
+    }
+  }
+}
